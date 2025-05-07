@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Blender to Cascadeur",
     "author": "Ri x Claude",
-    "version": (2, 3, 1),  # Nâng phiên bản lên sau khi tối ưu
+    "version": (3, 0, 0),  
     "blender": (3, 0, 0),
     "location": "View3D > Sidebar > B2C",
     "description": "Mark keyframes for Cascadeur export with extended features",
