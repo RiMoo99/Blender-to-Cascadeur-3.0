@@ -2,65 +2,71 @@ import os
 import time
 import tempfile
 import shutil
+import json
 from datetime import datetime, timedelta
 
 def ensure_dir_exists(directory):
-    """Đảm bảo thư mục tồn tại, tạo nếu không có."""
+    """Ensure directory exists, create if not."""
     if directory and not os.path.exists(directory):
         os.makedirs(directory)
     return directory
 
 def create_trigger_file(exchange_folder, action, data=None):
-    """Tạo file trigger để thông báo Cascadeur thực hiện hành động."""
+    """Create a trigger file to notify Cascadeur to perform an action."""
     ensure_dir_exists(exchange_folder)
     cascadeur_trigger_folder = os.path.join(exchange_folder, "cascadeur_triggers")
     ensure_dir_exists(cascadeur_trigger_folder)
     
-    # Chuẩn bị dữ liệu
+    # Prepare data
     trigger_data = {
         "action": action,
         "timestamp": time.time(),
         "data": data or {}
     }
     
-    # Tạo tên file với timestamp để tránh xung đột
+    # Create filename with timestamp to avoid conflicts
     timestamp = int(time.time())
     trigger_path = os.path.join(cascadeur_trigger_folder, f"trigger_{action}_{timestamp}.json")
     
-    # Ghi file trigger
-    with open(trigger_path, 'w') as f:
-        import json
-        json.dump(trigger_data, f, indent=2)
-    
-    return trigger_path
+    # Write trigger file
+    try:
+        with open(trigger_path, 'w') as f:
+            json.dump(trigger_data, f, indent=2)
+        return trigger_path
+    except (IOError, PermissionError) as e:
+        print(f"Error creating trigger file: {e}")
+        return None
 
 def copy_file_to_exchange(source_path, exchange_folder, subfolder=None):
-    """Sao chép file đến thư mục trao đổi."""
+    """Copy file to exchange directory."""
     ensure_dir_exists(exchange_folder)
     
-    # Tạo thư mục con nếu cần
+    # Create subfolder if needed
     target_folder = exchange_folder
     if subfolder:
         target_folder = os.path.join(exchange_folder, subfolder)
         ensure_dir_exists(target_folder)
     
-    # Lấy tên file từ đường dẫn nguồn
+    # Get filename from source path
     filename = os.path.basename(source_path)
     target_path = os.path.join(target_folder, filename)
     
-    # Sao chép file
-    shutil.copy2(source_path, target_path)
-    
-    return target_path
+    # Copy file
+    try:
+        shutil.copy2(source_path, target_path)
+        return target_path
+    except (IOError, PermissionError) as e:
+        print(f"Error copying file: {e}")
+        return None
 
 def get_export_path(file_type="fbx", use_temp=True, exchange_folder=None):
     """
-    Tạo đường dẫn để xuất file.
+    Create path for exporting files.
     
     Args:
-        file_type: Loại file (fbx, json, ...)
-        use_temp: Sử dụng thư mục tạm hay không
-        exchange_folder: Thư mục trao đổi (nếu không sử dụng thư mục tạm)
+        file_type: File type (fbx, json, ...)
+        use_temp: Use temporary directory or not
+        exchange_folder: Exchange directory (if not using temp)
     """
     current_time = time.strftime("%Y%m%d%H%M%S")
     filename = f"blender_to_cascadeur_{current_time}.{file_type}"
@@ -80,50 +86,43 @@ def get_export_path(file_type="fbx", use_temp=True, exchange_folder=None):
     return os.path.join(temp_dir, filename)
 
 def mark_trigger_as_processed(trigger_path):
-    """Đánh dấu file trigger đã được xử lý bằng cách đổi tên."""
+    """Mark trigger file as processed by renaming it."""
     if os.path.exists(trigger_path):
         processed_path = trigger_path + ".processed"
         try:
             os.rename(trigger_path, processed_path)
             return processed_path
-        except:
+        except (IOError, PermissionError):
             # Fallback to removal if rename fails
             try:
                 os.remove(trigger_path)
-            except:
+            except (IOError, PermissionError):
                 pass
     return None
 
 def cleanup_old_triggers(exchange_folder, hours=24):
-    """Dọn dẹp các file trigger cũ."""
+    """Clean up old trigger files."""
     if not exchange_folder or not os.path.exists(exchange_folder):
         return
     
-    # Tính thời gian giới hạn
+    # Calculate cutoff time
     cutoff_time = datetime.now() - timedelta(hours=hours)
     
-    # Kiểm tra thư mục triggers của Blender
-    blender_trigger_folder = os.path.join(exchange_folder, "blender_triggers")
-    if os.path.exists(blender_trigger_folder):
-        for filename in os.listdir(blender_trigger_folder):
-            if filename.endswith(".json.processed"):
-                filepath = os.path.join(blender_trigger_folder, filename)
-                file_mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
-                if file_mtime < cutoff_time:
-                    try:
-                        os.remove(filepath)
-                    except:
-                        pass
+    folders = [
+        os.path.join(exchange_folder, "blender_triggers"),
+        os.path.join(exchange_folder, "cascadeur_triggers")
+    ]
     
-    # Kiểm tra thư mục triggers của Cascadeur
-    cascadeur_trigger_folder = os.path.join(exchange_folder, "cascadeur_triggers")
-    if os.path.exists(cascadeur_trigger_folder):
-        for filename in os.listdir(cascadeur_trigger_folder):
+    for folder in folders:
+        if not os.path.exists(folder):
+            continue
+            
+        for filename in os.listdir(folder):
             if filename.endswith(".json.processed"):
-                filepath = os.path.join(cascadeur_trigger_folder, filename)
-                file_mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
-                if file_mtime < cutoff_time:
-                    try:
+                filepath = os.path.join(folder, filename)
+                try:
+                    file_mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
+                    if file_mtime < cutoff_time:
                         os.remove(filepath)
-                    except:
-                        pass
+                except (OSError, IOError):
+                    pass

@@ -1,8 +1,6 @@
 import bpy
 import os
-import subprocess
 import json
-import tempfile
 from bpy.types import Operator
 
 # Clean Keyframes trong Blender
@@ -98,9 +96,11 @@ class BTC_OT_CleanKeyframesCascadeur(Operator):
     def execute(self, context):
         # Lấy danh sách keyframe được đánh dấu
         marked_keyframes = {}
+        count = 0
         for item in context.scene.btc_keyframes:
             if item.is_marked:
                 marked_keyframes[str(item.frame)] = {}
+                count += 1
         
         if not marked_keyframes:
             self.report({'WARNING'}, "No marked keyframes found")
@@ -117,14 +117,27 @@ class BTC_OT_CleanKeyframesCascadeur(Operator):
                 "keyframes": marked_keyframes
             }
         }
-        trigger_path = file_utils.create_trigger_file(exchange_folder, "clean_keyframes", trigger_data)
         
-        # Chạy lệnh trong Cascadeur
-        from ..utils.csc_handling import CascadeurHandler
-        CascadeurHandler().execute_csc_command("commands.externals.temp_keyframe_cleaner")
-        
-        self.report({'INFO'}, f"Keyframe cleaning request sent to Cascadeur. {len(marked_keyframes)} marked keyframes")
-        return {'FINISHED'}
+        try:
+            trigger_path = file_utils.create_trigger_file(exchange_folder, "clean_keyframes", trigger_data)
+            if not trigger_path:
+                self.report({'ERROR'}, "Failed to create trigger file")
+                return {'CANCELLED'}
+                
+            # Chạy lệnh trong Cascadeur
+            from ..utils.csc_handling import CascadeurHandler
+            handler = CascadeurHandler()
+            
+            if not handler.execute_csc_command("commands.externals.temp_keyframe_cleaner"):
+                self.report({'ERROR'}, "Failed to execute command in Cascadeur")
+                return {'CANCELLED'}
+                
+            self.report({'INFO'}, f"Keyframe cleaning request sent to Cascadeur. {count} marked keyframes")
+            return {'FINISHED'}
+            
+        except Exception as e:
+            self.report({'ERROR'}, f"Error: {str(e)}")
+            return {'CANCELLED'}
 
 # Danh sách các lớp để đăng ký
 classes = [

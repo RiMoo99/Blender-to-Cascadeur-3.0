@@ -6,7 +6,7 @@ import tempfile
 
 
 def command_name():
-    return "External commands.Temp Batch Exporter"
+    return "B2C.Temp Batch Exporter"
 
 
 def run(scene):

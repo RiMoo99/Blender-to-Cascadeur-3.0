@@ -1,12 +1,8 @@
 import bpy
+import importlib
 
 # Import main_panel module
-if "bpy" not in locals():
-    from . import main_panel
-else:
-    import importlib
-    from . import main_panel  # Thêm dòng này
-    importlib.reload(main_panel)
+from . import main_panel
 
 # Định nghĩa danh sách classes để đăng ký
 classes = [
@@ -20,3 +16,8 @@ classes = [
     main_panel.BTC_PT_CascadeurToBlenderPanel,
     main_panel.BTC_UL_KeyframeList,
 ]
+
+# Hàm reload module khi Blender tải lại addon
+def reload_modules():
+    if 'main_panel' in globals():
+        importlib.reload(main_panel)

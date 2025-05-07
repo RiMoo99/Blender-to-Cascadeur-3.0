@@ -1,12 +1,12 @@
 import bpy
 from bpy.types import Operator, PropertyGroup
 
-# Định nghĩa PropertyGroup cho keyframe
+# Define PropertyGroup for keyframe
 class KeyframeItem(PropertyGroup):
     frame: bpy.props.IntProperty(name="Frame")
     is_marked: bpy.props.BoolProperty(name="Marked", default=False)
 
-# Xử lý chọn armature
+# Handle armature selection
 class BTC_OT_PickArmature(Operator):
     bl_idname = "btc.pick_armature"
     bl_label = "Pick Armature"
@@ -18,42 +18,42 @@ class BTC_OT_PickArmature(Operator):
         return context.active_object and context.active_object.type == 'ARMATURE'
     
     def execute(self, context):
-        # Lưu armature hiện tại vào scene
+        # Save current armature to scene
         context.scene.btc_armature = context.active_object
         self.report({'INFO'}, f"Selected armature: {context.active_object.name}")
         
-        # Cập nhật danh sách keyframe với armature mới
+        # Update keyframe list with new armature
         self.update_keyframe_list(context)
         
         return {'FINISHED'}
     
     def update_keyframe_list(self, context):
-        # Xóa danh sách cũ
+        # Clear old list
         context.scene.btc_keyframes.clear()
         
-        # Nếu không có armature, return
+        # If no armature, return
         if not context.scene.btc_armature:
             return
             
         armature = context.scene.btc_armature
         
-        # Tìm tất cả keyframe từ armature
+        # Find all keyframes from armature
         if armature.animation_data and armature.animation_data.action:
             keyframes = set()
             
             for fcurve in armature.animation_data.action.fcurves:
                 for keyframe in fcurve.keyframe_points:
-                    # Thêm frame vào set
+                    # Add frame to set
                     frame = int(keyframe.co[0])
                     keyframes.add(frame)
             
-            # Thêm keyframe vào danh sách
+            # Add keyframes to list
             for frame in sorted(list(keyframes)):
                 item = context.scene.btc_keyframes.add()
                 item.frame = frame
-                item.is_marked = False  # Mặc định là không đánh dấu
+                item.is_marked = False  # Default is not marked
 
-# Đánh dấu keyframe hiện tại
+# Mark current keyframe
 class BTC_OT_MarkCurrentKeyframe(Operator):
     bl_idname = "btc.mark_current_keyframe"
     bl_label = "Mark Current Keyframe"
@@ -67,24 +67,22 @@ class BTC_OT_MarkCurrentKeyframe(Operator):
     def execute(self, context):
         current_frame = context.scene.frame_current
         
-        # Kiểm tra xem keyframe có tồn tại trong danh sách không
-        keyframe_exists = False
+        # Check if keyframe exists in list
         for item in context.scene.btc_keyframes:
             if item.frame == current_frame:
                 item.is_marked = True
-                keyframe_exists = True
-                break
+                self.report({'INFO'}, f"Marked keyframe at frame {current_frame}")
+                return {'FINISHED'}
         
-        if not keyframe_exists:
-            # Nếu keyframe không tồn tại, thêm vào danh sách
-            item = context.scene.btc_keyframes.add()
-            item.frame = current_frame
-            item.is_marked = True
+        # If keyframe doesn't exist, add to list
+        item = context.scene.btc_keyframes.add()
+        item.frame = current_frame
+        item.is_marked = True
         
-        self.report({'INFO'}, f"Marked keyframe at frame {current_frame}")
+        self.report({'INFO'}, f"Added and marked keyframe at frame {current_frame}")
         return {'FINISHED'}
 
-# Xóa đánh dấu keyframe hiện tại
+# Clear current keyframe marking
 class BTC_OT_ClearCurrentKeyframe(Operator):
     bl_idname = "btc.clear_current_keyframe"
     bl_label = "Clear Current Keyframe"
@@ -98,7 +96,7 @@ class BTC_OT_ClearCurrentKeyframe(Operator):
     def execute(self, context):
         current_frame = context.scene.frame_current
         
-        # Tìm và xóa đánh dấu keyframe
+        # Find and clear keyframe marking
         for item in context.scene.btc_keyframes:
             if item.frame == current_frame:
                 item.is_marked = False
@@ -108,7 +106,7 @@ class BTC_OT_ClearCurrentKeyframe(Operator):
         self.report({'WARNING'}, f"No keyframe found at frame {current_frame}")
         return {'CANCELLED'}
 
-# Đánh dấu tất cả keyframe
+# Mark all keyframes
 class BTC_OT_MarkAllKeyframes(Operator):
     bl_idname = "btc.mark_all_keyframes"
     bl_label = "Mark All Keyframes"
@@ -117,16 +115,19 @@ class BTC_OT_MarkAllKeyframes(Operator):
     
     @classmethod
     def poll(cls, context):
-        return context.scene.btc_armature is not None
+        return context.scene.btc_armature is not None and len(context.scene.btc_keyframes) > 0
     
     def execute(self, context):
+        count = 0
         for item in context.scene.btc_keyframes:
-            item.is_marked = True
+            if not item.is_marked:
+                item.is_marked = True
+                count += 1
         
-        self.report({'INFO'}, "Marked all keyframes")
+        self.report({'INFO'}, f"Marked {count} keyframes")
         return {'FINISHED'}
 
-# Xóa tất cả đánh dấu keyframe
+# Clear all keyframe markings
 class BTC_OT_ClearAllKeyframes(Operator):
     bl_idname = "btc.clear_all_keyframes"
     bl_label = "Clear All Keyframes"
@@ -135,18 +136,20 @@ class BTC_OT_ClearAllKeyframes(Operator):
     
     @classmethod
     def poll(cls, context):
-        return context.scene.btc_armature is not None
+        return context.scene.btc_armature is not None and len(context.scene.btc_keyframes) > 0
     
     def execute(self, context):
+        count = 0
         for item in context.scene.btc_keyframes:
-            item.is_marked = False
+            if item.is_marked:
+                item.is_marked = False
+                count += 1
         
-        self.report({'INFO'}, "Cleared all keyframes")
+        self.report({'INFO'}, f"Cleared {count} keyframes")
         return {'FINISHED'}
 
-# Danh sách các lớp để đăng ký
+# List of classes to register
 classes = [
-    KeyframeItem,
     BTC_OT_PickArmature,
     BTC_OT_MarkCurrentKeyframe,
     BTC_OT_ClearCurrentKeyframe,

@@ -7,7 +7,7 @@ from bpy.types import Operator
 from bpy.props import StringProperty
 from ..utils import file_utils, preferences
 
-# Import class từ keyframe_operators thay vì định nghĩa lại
+# Import class từ keyframe_operators
 from .keyframe_operators import BTC_OT_PickArmature
 
 # Xuất đối tượng
@@ -35,52 +35,77 @@ class BTC_OT_ExportObject(Operator):
         # Tạo đường dẫn export
         export_path = file_utils.get_export_path(file_type="fbx", use_temp=True)
         
-        # Export FBX
-        self.export_fbx(context, export_path)
+        try:
+            # Export FBX
+            if not self.export_fbx(context, export_path):
+                self.report({'ERROR'}, "Failed to export FBX")
+                return {'CANCELLED'}
+            
+            # Sao chép file sang thư mục trao đổi
+            fbx_path = file_utils.copy_file_to_exchange(export_path, exchange_folder, "fbx")
+            if not fbx_path:
+                self.report({'ERROR'}, "Failed to copy FBX to exchange folder")
+                return {'CANCELLED'}
+            
+            # Tạo trigger file
+            trigger_data = {
+                "action": "import_object",
+                "data": {
+                    "fbx_path": fbx_path,
+                    "object_name": armature.name
+                }
+            }
+            
+            trigger_path = file_utils.create_trigger_file(exchange_folder, "import_object", trigger_data)
+            if not trigger_path:
+                self.report({'ERROR'}, "Failed to create trigger file")
+                return {'CANCELLED'}
+            
+            # Tự động mở Cascadeur nếu đã bật tùy chọn
+            if prefs.auto_open_cascadeur:
+                bpy.ops.btc.open_cascadeur()
+            
+            self.report({'INFO'}, f"Exported object to {fbx_path}")
+            return {'FINISHED'}
         
-        # Sao chép file sang thư mục trao đổi
-        fbx_path = file_utils.copy_file_to_exchange(export_path, exchange_folder, "fbx")
-        
-        # Tạo trigger file
-        trigger_data = {
-            "fbx_path": fbx_path,
-            "object_name": armature.name
-        }
-        file_utils.create_trigger_file(exchange_folder, "import_object", trigger_data)
-        
-        # Tự động mở Cascadeur nếu đã bật tùy chọn
-        if prefs.auto_open_cascadeur:
-            bpy.ops.btc.open_cascadeur()
-        
-        self.report({'INFO'}, f"Exported object to {fbx_path}")
-        return {'FINISHED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"Export error: {str(e)}")
+            return {'CANCELLED'}
     
     def export_fbx(self, context, filepath):
-        # Lưu trạng thái selection hiện tại
-        original_selection = context.selected_objects.copy()
-        active_object = context.active_object
+        """Export armature to FBX"""
+        try:
+            # Lưu trạng thái selection hiện tại
+            original_selection = context.selected_objects.copy()
+            active_object = context.active_object
+            
+            # Chọn armature
+            bpy.ops.object.select_all(action='DESELECT')
+            context.scene.btc_armature.select_set(True)
+            context.view_layer.objects.active = context.scene.btc_armature
+            
+            # Export FBX
+            bpy.ops.export_scene.fbx(
+                filepath=filepath,
+                use_selection=True,
+                object_types={'ARMATURE', 'MESH'},
+                use_mesh_modifiers=True,
+                use_mesh_modifiers_render=True,
+                add_leaf_bones=False
+            )
+            
+            # Khôi phục selection
+            bpy.ops.object.select_all(action='DESELECT')
+            for obj in original_selection:
+                obj.select_set(True)
+            if active_object:
+                context.view_layer.objects.active = active_object
+                
+            return True
         
-        # Chọn armature
-        bpy.ops.object.select_all(action='DESELECT')
-        context.scene.btc_armature.select_set(True)
-        context.view_layer.objects.active = context.scene.btc_armature
-        
-        # Export FBX
-        bpy.ops.export_scene.fbx(
-            filepath=filepath,
-            use_selection=True,
-            object_types={'ARMATURE', 'MESH'},
-            use_mesh_modifiers=True,
-            use_mesh_modifiers_render=True,
-            add_leaf_bones=False
-        )
-        
-        # Khôi phục selection
-        bpy.ops.object.select_all(action='DESELECT')
-        for obj in original_selection:
-            obj.select_set(True)
-        if active_object:
-            context.view_layer.objects.active = active_object
+        except Exception as e:
+            print(f"FBX export error: {str(e)}")
+            return False
 
 # Xuất animation
 class BTC_OT_ExportAnimation(Operator):
@@ -98,7 +123,7 @@ class BTC_OT_ExportAnimation(Operator):
     
     @classmethod
     def poll(cls, context):
-        return context.scene.btc_armature is not None and len(context.scene.btc_keyframes) > 0
+        return context.scene.btc_armature is not None
     
     def invoke(self, context, event):
         # Lưu frame hiện tại
@@ -159,15 +184,15 @@ class BTC_OT_ExportAnimation(Operator):
             
             # Sao chép file sang thư mục trao đổi để sử dụng sau
             json_path = file_utils.copy_file_to_exchange(filepath, exchange_folder, "json")
+            if not json_path:
+                self.report({'WARNING'}, "Failed to copy JSON to exchange folder, but file was saved locally")
             
             # Đảm bảo chúng ta ở chế độ object trước khi tiếp tục
             if context.object and context.object.mode != 'OBJECT':
                 bpy.ops.object.mode_set(mode='OBJECT')
             
-            # Giờ mở panel xuất ARP với độ trễ sử dụng bộ hẹn giờ
-            # Điều này giúp đảm bảo bối cảnh được cập nhật sau khi trình duyệt file đóng
+            # Gọi hàm xuất ARP với độ trễ sử dụng bộ hẹn giờ
             def open_arp_export_delayed():
-                # Gọi hàm xuất ARP
                 self.open_arp_export(context)
                 return None  # Xóa bộ hẹn giờ
                 
@@ -212,42 +237,22 @@ class BTC_OT_ExportAnimation(Operator):
             # Cố gắng mở panel xuất ARP
             success = False
             
-            # Thử với tên panel đã xác định trước
-            try:
-                bpy.ops.arp.arp_export_fbx_panel('INVOKE_DEFAULT')
-                self.report({'INFO'}, "Opened ARP export panel")
-                success = True
-            except Exception as e:
-                print(f"First attempt failed: {e}")
-                
-            # Nếu lần thử đầu tiên thất bại, thử các phương pháp thay thế
-            if not success:
-                try:
-                    # Cho các phiên bản ARP khác nhau
-                    bpy.ops.arp_export_fbx_panel('INVOKE_DEFAULT')
-                    self.report({'INFO'}, "Opened ARP export panel (method 2)")
-                    success = True
-                except Exception as e:
-                    print(f"Second attempt failed: {e}")
+            # Thử các phương pháp khác nhau
+            arp_methods = [
+                ("arp.arp_export_fbx_panel", "Opened ARP export panel"),
+                ("arp_export_fbx_panel", "Opened ARP export panel (method 2)"),
+                ("arp.export_fbx_panel", "Opened ARP export panel (method 3)"),
+                ("auto_rig_pro.export_fbx_panel", "Opened ARP export panel (method 4)")
+            ]
             
-            # Thử một phương pháp khác
-            if not success:
+            for op_name, success_msg in arp_methods:
                 try:
-                    # Cho các phiên bản ARP khác nhau hơn nữa
-                    bpy.ops.arp.export_fbx_panel('INVOKE_DEFAULT')
-                    self.report({'INFO'}, "Opened ARP export panel (method 3)")
+                    getattr(bpy.ops, op_name)('INVOKE_DEFAULT')
+                    self.report({'INFO'}, success_msg)
                     success = True
+                    break
                 except Exception as e:
-                    print(f"Third attempt failed: {e}")
-            
-            # Thử với tiền tố auto_rig_pro
-            if not success:
-                try:
-                    bpy.ops.auto_rig_pro.export_fbx_panel('INVOKE_DEFAULT')
-                    self.report({'INFO'}, "Opened ARP export panel (method 4)")
-                    success = True
-                except Exception as e:
-                    print(f"Fourth attempt failed: {e}")
+                    print(f"ARP export attempt failed with {op_name}: {e}")
             
             # Nếu tất cả các lần thử đều thất bại, hiển thị hướng dẫn
             if not success:
@@ -311,26 +316,45 @@ class BTC_OT_ExportComplete(Operator):
             self.report({'ERROR'}, "Invalid JSON path")
             return {'CANCELLED'}
         
-        # Sao chép file sang thư mục trao đổi
-        fbx_path = file_utils.copy_file_to_exchange(self.fbx_path, exchange_folder, "fbx")
-        json_path = file_utils.copy_file_to_exchange(self.json_path, exchange_folder, "json")
-        
-        # Tạo trigger file
-        trigger_data = {
-            "fbx_path": fbx_path,
-            "json_path": json_path,
-            "object_name": context.scene.btc_armature.name if context.scene.btc_armature else "Unknown"
-        }
-        trigger_path = file_utils.create_trigger_file(exchange_folder, "import_animation", trigger_data)
-        
-        # Tự động mở Cascadeur nếu đã bật tùy chọn
-        if prefs.auto_open_cascadeur:
-            bpy.ops.btc.open_cascadeur()
-        
-        self.report({'INFO'}, f"Created trigger for Cascadeur at {trigger_path}")
-        return {'FINISHED'}
+        try:
+            # Sao chép file sang thư mục trao đổi
+            fbx_path = file_utils.copy_file_to_exchange(self.fbx_path, exchange_folder, "fbx")
+            if not fbx_path:
+                self.report({'ERROR'}, "Failed to copy FBX to exchange folder")
+                return {'CANCELLED'}
+                
+            json_path = file_utils.copy_file_to_exchange(self.json_path, exchange_folder, "json")
+            if not json_path:
+                self.report({'ERROR'}, "Failed to copy JSON to exchange folder")
+                return {'CANCELLED'}
+            
+            # Tạo trigger file
+            trigger_data = {
+                "action": "import_animation",
+                "data": {
+                    "fbx_path": fbx_path,
+                    "json_path": json_path,
+                    "object_name": context.scene.btc_armature.name if context.scene.btc_armature else "Unknown"
+                }
+            }
+            
+            trigger_path = file_utils.create_trigger_file(exchange_folder, "import_animation", trigger_data)
+            if not trigger_path:
+                self.report({'ERROR'}, "Failed to create trigger file")
+                return {'CANCELLED'}
+            
+            # Tự động mở Cascadeur nếu đã bật tùy chọn
+            if prefs.auto_open_cascadeur:
+                bpy.ops.btc.open_cascadeur()
+            
+            self.report({'INFO'}, f"Created trigger for Cascadeur at {trigger_path}")
+            return {'FINISHED'}
+            
+        except Exception as e:
+            self.report({'ERROR'}, f"Export error: {str(e)}")
+            return {'CANCELLED'}
 
-# Danh sách các lớp để đăng ký - bỏ BTC_OT_PickArmature vì đã được đăng ký trong keyframe_operators
+# Danh sách các lớp để đăng ký
 classes = [
     BTC_OT_ExportObject,
     BTC_OT_ExportAnimation,
