@@ -20,6 +20,7 @@ class BTCAddonPreferences(bpy.types.AddonPreferences):
         name="Cascadeur executable",
         subtype="FILE_PATH",
         default="",
+        update=lambda self, context: update_csc_exe_path(self, context)
     )
 
     def draw(self, context):
@@ -34,6 +35,20 @@ class BTCAddonPreferences(bpy.types.AddonPreferences):
             icon="MODIFIER",
         )
 
+def update_csc_exe_path(self, context):
+    """Function called when Cascadeur path changes."""
+    # Check if path is valid
+    from .utils.csc_handling import CascadeurHandler
+    handler = CascadeurHandler()
+    
+    if handler.is_csc_exe_path_valid:
+        # Automatically install necessary files
+        try:
+            bpy.ops.btc.install_cascadeur_addon()
+        except:
+            # Might be in the process of initializing the addon, skip
+            pass
+
 # Import and register modules
 if "bpy" in locals():
     import importlib
@@ -44,7 +59,7 @@ if "bpy" in locals():
     # Import other modules
     from . operators import (
         keyframe_operators,
-        export_operators,
+        export_operators, 
         import_operators,
         clean_operators,
         csc_operators
@@ -68,7 +83,7 @@ else:
     from . import ui
     from . operators import (
         keyframe_operators,
-        export_operators,
+        export_operators, 
         import_operators,
         clean_operators,
         csc_operators
@@ -81,30 +96,20 @@ else:
 
 # Create list of all classes to register
 classes = []
+# Đăng ký PropertyGroup trước
+classes.append(keyframe_operators.KeyframeItem)
+# Sau đó đăng ký các UI class
 classes.extend(ui.classes)
+# Tiếp theo là các Operator class
 classes.extend(keyframe_operators.classes)
 classes.extend(export_operators.classes)
 classes.extend(import_operators.classes)
 classes.extend(clean_operators.classes)
 classes.extend(csc_operators.classes)
+# Tiếp theo là các Preference class
 classes.extend(preferences.classes)
-
-# Add BTCAddonPreferences to the list of classes
+# Cuối cùng là addon preference class
 classes.append(BTCAddonPreferences)
-
-def update_csc_exe_path(self, context):
-    """Function called when Cascadeur path changes."""
-    # Check if path is valid
-    from .utils.csc_handling import CascadeurHandler
-    handler = CascadeurHandler()
-    
-    if handler.is_csc_exe_path_valid:
-        # Automatically install necessary files
-        try:
-            bpy.ops.btc.install_cascadeur_addon()
-        except:
-            # Might be in the process of initializing the addon, skip
-            pass
 
 def register():
     # Register classes
