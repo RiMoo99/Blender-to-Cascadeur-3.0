@@ -1,9 +1,12 @@
 import subprocess
 import platform
 import os
-
-from . import file_utils
 import bpy
+
+# Hàm cục bộ thay vì import từ file_utils để tránh vòng lặp import
+def file_exists(file_path):
+    """Kiểm tra xem file có tồn tại hay không."""
+    return os.path.exists(file_path)
 
 def get_default_csc_exe_path():
     """
@@ -16,7 +19,7 @@ def get_default_csc_exe_path():
             r"C:\Program Files (x86)\Cascadeur\cascadeur.exe"
         ]
         for path in paths:
-            if os.path.exists(path):
+            if file_exists(path):
                 return path
     elif system == "Darwin":  # macOS
         paths = [
@@ -25,7 +28,7 @@ def get_default_csc_exe_path():
         ]
         for path in paths:
             expanded_path = os.path.expanduser(path)
-            if os.path.exists(expanded_path):
+            if file_exists(expanded_path):
                 return expanded_path
     elif system == "Linux":
         paths = [
@@ -34,7 +37,7 @@ def get_default_csc_exe_path():
         ]
         for path in paths:
             expanded_path = os.path.expanduser(path)
-            if os.path.exists(expanded_path):
+            if file_exists(expanded_path):
                 return expanded_path
     
     return ""
@@ -66,7 +69,7 @@ class CascadeurHandler:
         Check if the Cascadeur executable path is valid.
         """
         csc_path = self.csc_exe_path_addon_preference
-        return True if csc_path and os.path.exists(csc_path) else False
+        return True if csc_path and file_exists(csc_path) else False
 
     @property
     def commands_path(self):
